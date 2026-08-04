@@ -1125,6 +1125,7 @@ function startRecording(){
     showRec(true);
     toast('錄影中（'+recAudioNotes.join('；')+'）…播放至最後一頁後自動輸出');
     startRecLoop();
+    startSilenceWatch(rec);
     playFromStart();
   })
   .catch(err=>{
@@ -1132,15 +1133,17 @@ function startRecording(){
     toast('錄影失敗：'+(err&&err.message||err));
   });
 }
-let recAudioNotes=[];
+let recAudioNotes=[]; let recAnalyser=null;
 async function captureStreamAudio(out){
-  recAudioNotes=[];
+  recAudioNotes=[]; recAnalyser=null;
   const AC=window.AudioContext||window.webkitAudioContext;
   let sys=null;
   // 只錄「電腦（系統）音訊」：不開麥克風，避免錄到外在／環境聲音。
+  // 注意：speechSynthesis 語音不會進入「此頁籤」音訊（Chromium bug 40753195），
+  // 必須在分享時選「整個螢幕／視窗」並勾選「分享系統音訊」才能錄到朗讀語音。
   try{
     const display=await navigator.mediaDevices.getDisplayMedia({
-      video:true, audio:true, preferCurrentTab:true, systemAudio:'include'
+      video:true, audio:true, systemAudio:'include'
     });
     display.getVideoTracks().forEach(t=>{ try{t.stop();}catch(e){} });
     sys=display.getAudioTracks();
@@ -1149,7 +1152,7 @@ async function captureStreamAudio(out){
     throw e;
   }
   if(!sys||!sys.length){
-    recAudioNotes.push('未取得系統音訊（請在分享時點選「分享系統音訊」），將為無聲影片');
+    recAudioNotes.push('未取得系統音訊（請於分享時選「整個螢幕」並勾選「分享系統音訊」），暫為無聲');
     return null;
   }
   try{
@@ -1160,14 +1163,45 @@ async function captureStreamAudio(out){
     const comp=actx.createDynamicsCompressor();
     comp.threshold.value=-22; comp.knee.value=24;
     comp.ratio.value=10; comp.attack.value=0.004; comp.release.value=0.18;
+    // 靜音偵測：分析朗讀語音是否有實際音量
+    const an=actx.createAnalyser(); an.fftSize=512; recAnalyser=an;
     actx.createMediaStreamSource(new MediaStream(sys)).connect(comp);
-    comp.connect(gain); gain.connect(dest);
+    comp.connect(gain); gain.connect(dest); gain.connect(an);
     await actx.resume();
     const audioTrack=dest.stream.getAudioTracks()[0];
     if(audioTrack) out.addTrack(audioTrack);
     recAudioNotes.push('僅錄電腦音訊（已放大＋壓縮）');
     return actx;
   }catch(e){ console.warn('sys audio err',e); recAudioNotes.push('音訊處理失敗'); return null; }
+}
+// 靜音看門狗：錄音前幾秒若完全沒音量，代表系統音訊沒被正確捕捉（例如選了頁籤而非整個螢幕／未勾選分享系統音訊），引導使用者重選。
+function startSilenceWatch(rec){
+  const an=recAnalyser; if(!an) return;
+  const SAMPLE=an.fftSize?an.frequencyBinCount:256;
+  const buf=new Uint8Array(SAMPLE);
+  let silentCount=0; let checked=0;
+  const t0=performance.now();
+  const timer=setInterval(()=>{
+    an.getByteTimeDomainData(buf);
+    let peak=0;
+    for(let i=0;i<SAMPLE;i++){
+      const v=Math.abs(buf[i]-128);
+      if(v>peak) peak=v;
+    }
+    const hasAudio=peak>2; // 128 = 靜音中心，偏離 2 以上視為有聲
+    if(hasAudio) silentCount=0; else silentCount++;
+    checked++;
+    if(checked>=6){ // ~3 秒
+      clearInterval(timer);
+      if(silentCount>=checked-1){
+        toast('偵測不到系統音訊：speechSynthesis 語音需分享「整個螢幕」並勾選「分享系統音訊」才能錄到，已停止，請重錄');
+        stopRecording();
+      }else{
+        toast('已偵測到朗讀音訊，繼續錄影');
+      }
+    }
+  },500);
+  rec._silenceTimer=timer;
 }
 function startRecLoop(){
   stopRecLoop();
@@ -1228,6 +1262,8 @@ function roundRect(ctx,x,y,w,h,r){
 function stopRecording(){
   if(!rec) return;
   const r=rec; rec=null;
+  if(r._silenceTimer){ clearInterval(r._silenceTimer); r._silenceTimer=null; }
+  recAnalyser=null;
   stopRecLoop();
   showRec(false);
   r.mr.onstop=()=>{
