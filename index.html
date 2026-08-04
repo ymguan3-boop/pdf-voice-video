@@ -50,11 +50,11 @@
     border-radius:10px;
     padding:9px 16px;
     font-size:clamp(14px,2.5vw,24px);
-    line-height:1.55;
+    line-height:1.5;
     letter-spacing:1px;
     text-align:center;
-    white-space:normal;
-    word-break:break-word;
+    white-space:nowrap;
+    overflow:hidden;
     box-shadow:0 8px 28px rgba(0,0,0,.5);
     z-index:30;
     min-height:0;
@@ -722,28 +722,36 @@ function layoutHL(){
   });
 }
 
-/* ---------- 字幕：逐字即時同步（boundary 事件驅動，時間估算備援） ---------- */
-let subRevealN=0, subShownText='', segTextLen=0;
+/* ---------- 字幕：整行一次顯示（隨語音切換目前片段） ---------- */
+let subShownText='';
 function buildSegSpans(text){
   spans=[]; subtext.innerHTML='';
-  subRevealN=0; subShownText=''; segTextLen=0;
+  subShownText='';
   for(const ch of text){
     const sp=document.createElement('span');
     sp.className='sp'; sp.textContent=ch;
     subtext.appendChild(sp); spans.push(sp);
   }
-  segTextLen=spans.length;
 }
-function applyReveal(n){
-  if(!spans.length) return;
-  n=Math.max(0,Math.min(segTextLen, Math.floor(n)));
-  subRevealN=n;
-  for(let i=0;i<spans.length;i++) spans[i].classList.toggle('on', i<n);
-  subShownText=spans.slice(0,n).map(s=>s.textContent).join('');
+function showFull(text){
+  buildSegSpans(text);
+  spans.forEach(s=>s.classList.add('on'));
+  subShownText=text;
+  fitSubtitle();
+}
+// 字幕單行顯示：文字過長時縮小字級使其完整落在底框內，不換行也不截斷
+function fitSubtitle(){
+  subEl.style.fontSize='';
+  const maxW=parseFloat(getComputedStyle(subEl).maxWidth)||Math.max(200, window.innerWidth*0.94);
+  const base=parseFloat(getComputedStyle(subEl).fontSize)||20;
+  const sw=subtext.scrollWidth;
+  const cw=Math.min(subEl.clientWidth||maxW, maxW);
+  if(sw>cw&&sw>0){
+    subEl.style.fontSize=Math.max(11, base*cw/sw)+'px';
+  }
 }
 function rebuildSubFor(text){
-  buildSegSpans(text);
-  applyReveal(0);
+  showFull(text);
 }
 function buildSubtitle(p){
   const seg=p.segs[0]; rebuildSubFor(seg?seg.text:'');
@@ -789,7 +797,7 @@ function pageUtter(){
   // 同頁以單一 utterance 朗讀（'、' 產生些微停頓），遮罩/字幕優先以 boundary 事件同步實際語音
   scheduleSegs(p);
   setHighlight(p,0);
-  startRevealPage(p);
+  showSubForSeg(p,0);
   const u=new SpeechSynthesisUtterance(speechText);
   u.lang='zh-TW';
   const v=pickVoice(); if(v) u.voice=v;
@@ -829,10 +837,6 @@ function syncToChar(p, charIdx){
     segIdx=origIdx; curSeg=p.segs[origIdx]; setHighlight(p,origIdx);
     showSubForSeg(p,origIdx);
   }
-  const plan=segPlan[k];
-  const local=Math.max(0,charIdx-segSpeechStart[k]);
-  const n=(plan.toLocal&&plan.toLocal[local]!=null)?plan.toLocal[local]+1:local+1;
-  applyReveal(n);
 }
 
 let segTimers=[];
@@ -852,7 +856,6 @@ function scheduleSegs(p){
       curSeg=p.segs[i];
       setHighlight(p,i);
       showSubForSeg(p,i);
-      startSegRevealTimer(p.segs[i].text, curSegStart+acc);
     }, acc);
     segTimers.push(t);
   }
@@ -860,22 +863,6 @@ function scheduleSegs(p){
 function setHighlight(p,idx){
   const from=segRectStart[idx];
   hls.forEach((h,i)=>h.el.classList.toggle('on', i>=from&&i<from+p.segs[idx].rects.length));
-}
-function startSegRevealTimer(text, startAbs){
-  if(revealTimer) clearInterval(revealTimer);
-  const len=Math.max(1,[...text].length);
-  const total=estDurationMs(text);
-  revealTimer=setInterval(()=>{
-    if(!playing) return;
-    const frac=Math.min(1,(performance.now()-(startAbs||curSegStart))/total);
-    const target=Math.max(1,Math.round(len*frac));
-    applyReveal(Math.max(subRevealN, target));
-  },100);
-}
-function startRevealPage(p){
-  const seg=p.segs[0]; if(!seg) return;
-  rebuildSubFor(seg.text);
-  startSegRevealTimer(seg.text, curSegStart);
 }
 
 function cancelSpeech(){
@@ -912,7 +899,7 @@ function stopAll(showPill){
   clearSegTimers();
   hls.forEach(h=>h.el.classList.remove('on'));
   spans.forEach(s=>{s.style.opacity=0;s.classList.remove('on');});
-  subRevealN=0; subShownText='';
+  subShownText='';
   subEl.classList.remove('show');
   $('#bPlay').textContent='▶ 試播';
   if(!rec) exitFs();
@@ -1059,14 +1046,12 @@ function playCustomPage(){
   const plan=makeSpeechPlan(raw);
   curCustomPlan=plan;
   buildTextSubtitle(raw);
-  startRevealCustom(raw);
   const dur=Math.max(900, [...plan.speech].length*300);
   const u=new SpeechSynthesisUtterance(plan.speech);
   u.lang='zh-TW';
   const v=pickVoice(); if(v) u.voice=v;
   u.rate=0.9; u.pitch=1; u.volume=0.7;
   u.onstart=()=>{ subEl.classList.add('show'); };
-  u.onboundary=ev=>{ if(playing) syncCustomChar((ev&&ev.charIndex!=null)?ev.charIndex:0); };
   const done=()=>{
     if(!playing) return;
     if(watchdog){clearTimeout(watchdog);watchdog=null;}
@@ -1084,22 +1069,6 @@ function playCustomPage(){
     watchdog=setTimeout(()=>{ console.warn('speech watchdog: 跳下一頁'); done(); }, dur+8000);
   };
   if(performance.now()-lastCancel<120){ setTimeout(doSpeak,70); } else { doSpeak(); }
-}
-function syncCustomChar(charIdx){
-  const plan=curCustomPlan; if(!plan) return;
-  const n=(plan.toLocal&&plan.toLocal[charIdx]!=null)?plan.toLocal[charIdx]+1:charIdx+1;
-  applyReveal(n);
-}
-function startRevealCustom(txt){
-  if(revealTimer) clearInterval(revealTimer);
-  const len=Math.max(1,[...txt].length);
-  const total=Math.max(900,len*300);
-  revealTimer=setInterval(()=>{
-    if(!playing) return;
-    const frac=Math.min(1,(performance.now()-curSegStart)/total);
-    const target=Math.max(1,Math.round(len*frac));
-    applyReveal(Math.max(subRevealN, target));
-  },100);
 }
 function advanceCustomPage(){
   if(!playing||manualStop) return;
@@ -1135,7 +1104,7 @@ function startRecording(){
   if(!pagesData.length){ toast('請先選取 PDF'); return; }
   if(rec) return;
   if(playing) stopAll(false);
-  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ toast('此瀏覽器不支援錄影，請改用 Chrome／Edge'); return; }
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia){ toast('此瀏覽器不支援螢幕錄影，請改用 Chrome／Edge'); return; }
   enterFs();
   const out=new MediaStream();
   // 影片：canvas 合成（頁面＋高亮＋字幕），不依賴 tab 畫面捕捉
@@ -1167,48 +1136,38 @@ let recAudioNotes=[];
 async function captureStreamAudio(out){
   recAudioNotes=[];
   const AC=window.AudioContext||window.webkitAudioContext;
-  let mic=null, dAudios=[];
+  let sys=null;
+  // 只錄「電腦（系統）音訊」：不開麥克風，避免錄到外在／環境聲音。
   try{
-    const ms=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
-    mic=ms.getAudioTracks()[0]||null;
-  }catch(e){}
-  if(mic){
-    recAudioNotes.push('以麥克風收音（保證錄到語音）');
-  }else{
-    recAudioNotes.push('未取得麥克風，改嘗試擷取系統音訊');
-    try{
-      const display=await navigator.mediaDevices.getDisplayMedia({
-        video:true, audio:true, preferCurrentTab:true, systemAudio:'include'
-      });
-      display.getVideoTracks().forEach(t=>{ try{t.stop();}catch(e){} });
-      dAudios=display.getAudioTracks();
-      if(dAudios.length) recAudioNotes.push('已擷取系統音訊（需其包含 TTS）');
-      else recAudioNotes.push('仍無音訊，將為無聲錄影');
-    }catch(e){
-      if(e&&(e.name==='NotAllowedError'||e.name==='AbortError')) recAudioNotes.push('音訊來源被拒');
-      else throw e;
-    }
+    const display=await navigator.mediaDevices.getDisplayMedia({
+      video:true, audio:true, preferCurrentTab:true, systemAudio:'include'
+    });
+    display.getVideoTracks().forEach(t=>{ try{t.stop();}catch(e){} });
+    sys=display.getAudioTracks();
+  }catch(e){
+    if(e&&(e.name==='NotAllowedError'||e.name==='AbortError')){ recAudioNotes.push('未允許分享，已取消'); return null; }
+    throw e;
   }
-  if(mic||dAudios.length){
-    try{
-      const actx=new AC();
-      const dest=actx.createMediaStreamDestination();
-      const gMic=actx.createGain(), gSys=actx.createGain();
-      gMic.gain.value=mic?0.9:0;
-      gSys.gain.value=dAudios.length?0.7:0;
-      gMic.connect(dest); gSys.connect(dest);
-      if(mic) actx.createMediaStreamSource(new MediaStream([mic])).connect(gMic);
-      if(dAudios.length) actx.createMediaStreamSource(new MediaStream(dAudios)).connect(gSys);
-      await actx.resume();
-      const audioTrack=dest.stream.getAudioTracks()[0];
-      if(audioTrack) out.addTrack(audioTrack);
-      recAudioNotes.push('已加入音訊軌');
-      return actx;
-    }catch(e){ console.warn('mix audio err',e); recAudioNotes.push('音訊混音失敗'); }
-  } else {
-    recAudioNotes.push('無任何音訊來源，將為無聲錄影');
+  if(!sys||!sys.length){
+    recAudioNotes.push('未取得系統音訊（請在分享時點選「分享系統音訊」），將為無聲影片');
+    return null;
   }
-  return null;
+  try{
+    const actx=new AC();
+    const dest=actx.createMediaStreamDestination();
+    // 放大音量（解決「錄到的聲音太小」）＋ 動態壓縮避免爆音
+    const gain=actx.createGain(); gain.gain.value=1.9;
+    const comp=actx.createDynamicsCompressor();
+    comp.threshold.value=-22; comp.knee.value=24;
+    comp.ratio.value=10; comp.attack.value=0.004; comp.release.value=0.18;
+    actx.createMediaStreamSource(new MediaStream(sys)).connect(comp);
+    comp.connect(gain); gain.connect(dest);
+    await actx.resume();
+    const audioTrack=dest.stream.getAudioTracks()[0];
+    if(audioTrack) out.addTrack(audioTrack);
+    recAudioNotes.push('僅錄電腦音訊（已放大＋壓縮）');
+    return actx;
+  }catch(e){ console.warn('sys audio err',e); recAudioNotes.push('音訊處理失敗'); return null; }
 }
 function startRecLoop(){
   stopRecLoop();
@@ -1236,35 +1195,25 @@ function startRecLoop(){
     const txt=subShownText;
     if(txt){
       ctx.save();
-      const fs=34, lh=fs*1.4;
+      // 字幕單行：過長時縮小字級以完整呈現於底框內（不換行、不截斷）
+      let fs=36;
+      const boxW=rc.width-40;
       ctx.font='700 '+fs+'px "Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif';
-      ctx.textAlign='center'; ctx.textBaseline='alphabetic';
-      const boxMaxW=rc.width-40;
-      const lines=wrapLines(ctx, txt, boxMaxW-56);
-      const widest=lines.reduce((m,l)=>Math.max(m,ctx.measureText(l).width),0);
-      const boxW=Math.min(boxMaxW, widest+56);
-      const boxH=lines.length*lh+26;
+      const tw=ctx.measureText(txt).width;
+      if(tw>boxW-56){ fs=Math.max(18, Math.floor(fs*(boxW-56)/tw)); ctx.font='700 '+fs+'px "Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif'; }
+      const boxH=Math.max(fs+34, 58);
       const boxX=rc.width/2, boxY=rc.height-40-boxH;
       ctx.fillStyle='rgba(8,12,22,.95)';
       roundRect(ctx, boxX-boxW/2, boxY, boxW, boxH, 10);
       ctx.fill();
       ctx.fillStyle='#ffd54a';
-      lines.forEach((line,i)=>{ ctx.fillText(line, boxX, boxY+20+fs+i*lh); });
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(txt, boxX, boxY+boxH/2+1);
       ctx.restore();
     }
     recLoopRAF=requestAnimationFrame(draw);
   };
   recLoopRAF=requestAnimationFrame(draw);
-}
-function wrapLines(ctx, text, maxW){
-  const lines=[]; let cur='';
-  for(const ch of text){
-    const t=cur+ch;
-    if(cur&&ctx.measureText(t).width>maxW){ lines.push(cur); cur=ch; }
-    else cur=t;
-  }
-  if(cur) lines.push(cur);
-  return lines.length?lines:[''];
 }
 function stopRecLoop(){ if(recLoopRAF){ cancelAnimationFrame(recLoopRAF); recLoopRAF=0; } }
 function roundRect(ctx,x,y,w,h,r){
