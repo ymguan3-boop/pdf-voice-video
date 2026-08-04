@@ -744,7 +744,7 @@ function fitSubtitle(){
   subEl.style.fontSize='';
   const maxW=parseFloat(getComputedStyle(subEl).maxWidth)||Math.max(200, window.innerWidth*0.94);
   const base=parseFloat(getComputedStyle(subEl).fontSize)||20;
-  const sw=subtext.scrollWidth;
+  const sw=subEl.scrollWidth;
   const cw=Math.min(subEl.clientWidth||maxW, maxW);
   if(sw>cw&&sw>0){
     subEl.style.fontSize=Math.max(11, base*cw/sw)+'px';
