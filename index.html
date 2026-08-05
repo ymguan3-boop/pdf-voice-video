@@ -264,6 +264,22 @@
   #helpBox li::marker{color:var(--accent)}
   #helpBox .btn{margin-top:8px}
 
+  #aipromptmodal{
+    position:fixed;inset:0;z-index:95;
+    background:rgba(6,10,18,.96);
+    display:none;align-items:center;justify-content:center;
+  }
+  #aipromptmodal.show{display:flex}
+  #aipromptBox{
+    width:94vw;max-width:860px;max-height:88vh;overflow-y:auto;
+    background:#0d1626;border:1px solid rgba(255,255,255,.16);
+    border-radius:14px;padding:28px 34px;color:#eef2f8;
+  }
+  #aipromptBox h2{font-size:22px;letter-spacing:2px;margin-bottom:14px;color:var(--accent)}
+  #aipromptBox .apbody{white-space:pre-wrap;line-height:1.8;color:#c6d1e0;font-size:14.5px}
+  #aipromptBox .apbody b{color:var(--accent2)}
+  #aipromptBox .btn{margin-top:14px}
+
   </style>
 </head>
 <body>
@@ -382,19 +398,99 @@
         <li>為每一頁自行輸入要朗讀的文字，作為語音與字幕來源。</li>
         <li>左側為該頁 PDF 預覽，右側輸入文字並即時預估秒數；留空則該頁 1 秒後自動翻頁。</li>
         <li>「▶ 確認並播放」開始播放；「🎥 錄影並播放」同時錄製畫面與語音。</li>
+        <li>🔧 <a id="helpAiPrompt" href="javascript:void(0)" style="color:var(--accent);text-decoration:underline">使用AI生成簡報語音提示詞方法</a>：可將 PDF 資料丟進任何 AI，用提示詞產生每一頁的演講逐字稿，再貼進自訂欄位。</li>
       </ul>
     </div>
     <div class="hsec">
       <h3>錄影注意事項</h3>
       <ul>
-        <li>請使用 Chrome 或 Edge。點「▶ 播放並錄影」後瀏覽器會要求分享畫面與音訊，請允許並選擇<b>「Chrome 分頁」</b>（本頁）。</li>
-        <li>影片由程式<b>直接合成</b>（頁面＋黃色高亮＋字幕），不受「語音不會被錄進分頁畫面」的瀏覽器限制影響。</li>
-        <li>語音經<b>系統音訊或麥克風</b>收錄：分享時建議勾選「分享系統音訊」（Share system audio），若無系統音訊會自動改用麥克風。</li>
-        <li>字幕已直接燒錄進影片，輸出的影片即使離開本頁也能看到逐字字幕與高亮。</li>
-        <li>輸出為 WebM（VP9／Opus）格式，含語音；播放途中按「⏹ 停止」或 Esc 可提前結束並下載。</li>
+        <li>請使用 Chrome 或 Edge。點「▶ 播放並錄影」後瀏覽器會要求分享畫面與音訊，請選取<b>「整個螢幕」或某個視窗</b>，並勾選<b>「分享系統音訊」（Share system audio）</b>。</li>
+        <li>朗讀語音（speechSynthesis）不會進入「分享此頁籤」的音訊捕捉（瀏覽器限制，Chromium bug 40753195），因此<b>必須分享整個螢幕＋開啟系統音訊</b>才能錄到語音。</li>
+        <li>程式<b>不開啟麥克風</b>，避免錄到外在／環境聲音；錄音時音量已自動放大＋壓縮。</li>
+        <li>影片由程式<b>直接合成</b>（頁面＋黃色高亮＋字幕），字幕已燒錄進影片；輸出為 WebM（VP9／Opus）。</li>
+        <li>若開錄後約 3 秒出現「偵測不到系統音訊」提示，代表沒錄到語音，請停止後重新錄製並確認上述選項。</li>
+        <li>播放途中按「⏹ 停止」或 Esc 可提前結束並下載影片。</li>
       </ul>
     </div>
     <button class="btn primary" id="helpClose">✕ 關閉</button>
+  </div>
+</div>
+
+<div id="aipromptmodal">
+  <div id="aipromptBox">
+    <h2>使用AI生成簡報語音提示詞方法</h2>
+    <div class="apbody">可將PDF資料丟進任何AI,並以下方提示詞產生各頁的逐字稿並貼入自訂欄位:
+
+原來如此！如果您已經有既定的資料或 PDF 簡報，需要 AI 幫忙「吸收內容並轉化為每一頁的演講逐字稿」，這時候提示詞的設計重點就會從「發想結構」變成「資訊萃取、口語化轉換與節奏控制」。
+
+要讓 AI 寫出像真人在演講、而不是像在「唸課文」的逐字稿，可以使用以下這種「資料轉換型」的提示詞結構：
+
+核心提示詞公式
+角色設定 + 語氣與受眾 + 處理指令（口語化與轉場）+ 輸出格式 + [貼上你的資料]
+
+🚀 實戰提示詞範本（可以直接複製修改）
+您可以直接複製以下提示詞，並根據您的需求替換中括號 [...] 的內容。
+
+範本一：標準商務 / 專業匯報風格（適合一般工作報告）
+「你現在是一位口條清晰、極具說服力的[資深專案經理]。
+我將提供你一份關於 [2026年第三季行銷成效] 的簡報資料（或PDF內容擷取）。請根據這些資料，為『每一頁』撰寫演講逐字稿。
+
+【寫作要求】
+
+受眾與語氣： 聽眾是[公司高階主管與跨部門同事]。語氣需專業、自信且條理分明。
+
+完全口語化： 請將生硬的條列式文字，轉換為自然說話的口吻。不要只是照唸標題，要用引言或提問來帶出重點。
+
+流暢轉場： 每一頁的結尾，請加上一句自然的「轉場句」，用來順暢地銜接下一頁的內容。
+
+時間控制： 請將每一頁的逐字稿字數控制在 [150 - 200] 字左右（約演講 1 分鐘的長度）。
+
+【輸出格式】
+請以表格或條列式輸出，包含以下欄位：
+
+頁碼與標題：
+
+該頁核心講點（1句話總結）：
+
+演講逐字稿：
+
+動作或語氣提示：（例如：在此處停頓2秒、手勢引導看圖表等）
+
+以下是我的簡報資料：
+[在此貼上您的 PDF 內文、大綱或各頁重點資料]」
+
+範本二：生動說故事 / TED 演講風格（適合發表會、培訓、分享）
+「你現在是一位充滿熱情且擅長說故事的[品牌演講者]。
+我有一份關於 [全新產品介紹] 的簡報資料，總共 [10] 頁。請幫我把這些冷冰冰的資料，轉化為一場引人入勝的演講逐字稿。
+
+【寫作要求】
+
+開場與破冰： 第一頁請幫我設計一個強而有力的開場（例如：一個令人驚訝的數據、一個反問句或一個小故事）來抓住觀眾注意力。
+
+情感連結： 在講解數據或功能時，請多用生活化的比喻或強調『這對聽眾有什麼好處』。
+
+口語化表達： 句子要簡短好唸，多用『我們』、『大家』等字眼拉近距離。
+
+【輸出格式】
+請逐頁列出：
+第 X 頁：[頁面標題]
+🗣️ 逐字稿： (此處填寫口語化腳本)
+💡 舞台指示： (例如：微笑環視觀眾、語氣加重)
+🔗 銜接下一頁的轉場台詞： (一句話)
+
+以下是各頁的簡報內容：
+[在此貼上您的資料]」
+
+💡 丟入資料給 AI 時的 3 個小技巧
+分批餵資料（如果 PDF 很多頁）：
+如果簡報超過 15-20 頁，建議分批丟給 AI。例如：「先幫我生成第 1 到第 5 頁的逐字稿，這是我前 5 頁的資料：...」。這樣 AI 寫出來的品質會最精細，不會因為字數限制而草草帶過。
+
+告訴 AI 頁面上的「圖表」是什麼：
+如果你把 PDF 的文字貼給 AI，AI 看不到圖。你可以在資料裡備註：「（第3頁資料：這裡有一張營收成長 20% 的折線圖）」，AI 就會在逐字稿裡寫出：「大家請看畫面上的折線圖，我們可以看到...」這樣會逼真很多！
+
+先給框架，再給資料：
+如果檔案很大（直接上傳 PDF 檔），你可以先發送上面的「提示詞」，並在最後加一句：「如果你了解任務了，請回覆『請提供簡報資料』，我接著會把資料傳給你。」 這樣能確保 AI 完全吸收了你的寫作規則。</div>
+    <button class="btn primary" id="aipromptClose">✕ 關閉</button>
   </div>
 </div>
 
@@ -467,14 +563,22 @@ if(window.speechSynthesis){
   $('#voicesel').onchange=e=>{curVoice=speechSynthesis.getVoices().find(v=>v.name===e.target.value)||null;};
   speechSynthesis.getVoices();
 }
+function estSecs(text){
+  if(!text) return 1;
+  const ch=Math.max(1,[...text].length);
+  const pauses=([...text].filter(c=>('。！？；').indexOf(c)>=0).length);
+  // rate=0.9 的中文 TTS 單字約 0.31 秒，句讀額外停頓約 0.55 秒
+  return Math.max(1.5, ch*0.31 + pauses*0.55);
+}
 function estDurationMs(text){
-  const n=[...text].length;
-  return Math.max(900, n*300);
+  return Math.round(estSecs(text)*1000);
 }
 
 /* ---------- 語音發音正規化 ---------- */
-// 標點/句讀：保留些許停頓（換成空白），不讓語音唸出標點名稱
-const SPEECH_SPACE=new Set('，。、；：？！…—─～~ ,.;:!?'.split(''));
+// 標點/句讀：中文 TTS 不會「唸出」標點，而是以標點製造語氣停頓（更有抑揚、更人性化），
+// 故遇到句讀標點時「保留」該字元作為停頓訊號；其餘符號才換成空白或不唸。
+const SPEECH_PAUSE=new Set('，。！？；、：'.split(''));   // 保留：製造語氣停頓
+const SPEECH_SPACE=new Set('…—─～~ .,;:!?'.split(''));   // 換成空白：輕微停頓
 // 括號、引號與裝飾符號：完全不唸
 const SPEECH_REMOVE=new Set('（）()[]{}「」『』《》〈〉【】〔〕［］“”‘’"\'<>＊*＃#§☆★○●◎◇◆□■△▲▽▼→←↑↓↗↘①②③④⑤⑥⑦⑧⑨⑩™®©'.split(''));
 // 少數符號：轉成口語念法
@@ -511,6 +615,7 @@ function makeSpeechPlan(text){
     const rep=SPEECH_REPLACE[cp];
     let piece;
     if(rep!==undefined) piece=rep;
+    else if(SPEECH_PAUSE.has(cp)) piece=cp;   // 保留句讀標點 → 製造語氣停頓
     else if(SPEECH_SPACE.has(cp)) piece=' ';
     else if(SPEECH_REMOVE.has(cp)) piece='';
     else if(cp.length>1) piece='';   // 代理對（emoji 等）不唸
@@ -694,7 +799,9 @@ async function doRender(seq){
     });
   });
   layoutHL();
-  buildSubtitle(p);
+  // 自訂模式：字幕需顯示「使用者輸入的文字」；底線模式才依迴路顯示底線段
+  if(mode==='custom'){ buildTextSubtitle((customTexts[pi]||'').trim()); }
+  else buildSubtitle(p);
   $('#curpage').textContent=pi+1;
   document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('on',i===pi));
   $('#progress').style.width='0%';
@@ -933,7 +1040,7 @@ setInterval(()=>{
   if(mode==='custom'){
     const txt=(customTexts[pi]||'').trim();
     if(!txt){ $('#progress').style.width='0%'; return; }
-    const total=Math.max(900,[...txt].length*300)||1;
+    const total=estDurationMs(txt)||1;
     const done=Math.min(total, performance.now()-(curSegStart||0));
     $('#progress').style.width=Math.min(100, done/total*100)+'%';
     return;
@@ -1002,7 +1109,7 @@ function syncEditor(){
 }
 function updateEst(){
   const txt=$('#edText').value.trim();
-  const secs=txt?Math.max(1,Math.ceil([...txt].length*0.3)):1;
+  const secs=txt?Math.max(1,Math.ceil(estSecs(txt))):1;
   $('#edSec').textContent=secs+' 秒'+(txt?'':'（留空：1 秒後翻頁）');
 }
 function renderEdPreview(){
@@ -1046,7 +1153,7 @@ function playCustomPage(){
   const plan=makeSpeechPlan(raw);
   curCustomPlan=plan;
   buildTextSubtitle(raw);
-  const dur=Math.max(900, [...plan.speech].length*300);
+  const dur=Math.max(900, Math.round(estSecs(raw)*1000));
   const u=new SpeechSynthesisUtterance(plan.speech);
   u.lang='zh-TW';
   const v=pickVoice(); if(v) u.voice=v;
@@ -1112,7 +1219,7 @@ function startRecording(){
   recCanvas.width=canvas.width||1280; recCanvas.height=canvas.height||720;
   const vtrack=recCanvas.captureStream(30).getVideoTracks()[0];
   if(vtrack) out.addTrack(vtrack);
-  // 音訊：優先麥克風（保證錄到 speechSynthesis 語音），失敗才嘗試系統音訊
+  // 音訊：僅系統音訊（不開麥克風）；speechSynthesis 需「分享整個螢幕＋分享系統音訊」才收得到
   captureStreamAudio(out).then(actx=>{
     const mime=pickMime();
     const mr=new MediaRecorder(out, mime?{mimeType:mime, videoBitsPerSecond:8000000}:undefined);
@@ -1174,13 +1281,13 @@ async function captureStreamAudio(out){
     return actx;
   }catch(e){ console.warn('sys audio err',e); recAudioNotes.push('音訊處理失敗'); return null; }
 }
-// 靜音看門狗：錄音前幾秒若完全沒音量，代表系統音訊沒被正確捕捉（例如選了頁籤而非整個螢幕／未勾選分享系統音訊），引導使用者重選。
+// 靜音看門狗：錄音前幾秒若完全沒音量，代表系統音訊沒被正確捕捉（例如選了頁籤而非整個螢幕／未勾選分享系統音訊）。
+// 僅「提示」不中止錄影，確保仍能產出完整影片（頁面＋字幕），避免中斷造成幾乎空白的片段。
 function startSilenceWatch(rec){
   const an=recAnalyser; if(!an) return;
   const SAMPLE=an.fftSize?an.frequencyBinCount:256;
   const buf=new Uint8Array(SAMPLE);
-  let silentCount=0; let checked=0;
-  const t0=performance.now();
+  let silentCount=0; let checked=0; let warned=false;
   const timer=setInterval(()=>{
     an.getByteTimeDomainData(buf);
     let peak=0;
@@ -1192,11 +1299,11 @@ function startSilenceWatch(rec){
     if(hasAudio) silentCount=0; else silentCount++;
     checked++;
     if(checked>=6){ // ~3 秒
-      clearInterval(timer);
-      if(silentCount>=checked-1){
-        toast('偵測不到系統音訊：speechSynthesis 語音需分享「整個螢幕」並勾選「分享系統音訊」才能錄到，已停止，請重錄');
-        stopRecording();
-      }else{
+      if(!hasAudio&&!warned){
+        warned=true;
+        toast('⚠️ 偵測不到系統音訊：語音可能沒被錄到。請停止後重新錄製，並在分享時選「整個螢幕」且勾選「分享系統音訊」');
+      }else if(hasAudio&&warned){
+        warned=false;
         toast('已偵測到朗讀音訊，繼續錄影');
       }
     }
@@ -1312,6 +1419,8 @@ $('#bEdit').onclick=openEditor;
 $('#bPlayRec').onclick=()=>{ if(rec) stopRecording(); else startRecording(); };
 $('#landHelp').onclick=()=>{ $('#helpmodal').classList.add('show'); };
 $('#helpClose').onclick=()=>{ $('#helpmodal').classList.remove('show'); };
+$('#helpAiPrompt').onclick=e=>{ e.preventDefault(); $('#aipromptmodal').classList.add('show'); };
+$('#aipromptClose').onclick=()=>{ $('#aipromptmodal').classList.remove('show'); };
 document.querySelectorAll('.modecard').forEach(c=>{ c.onclick=()=>enterMode(c.getAttribute('data-mode')); });
 $('#edPrevBtn').onclick=()=>{ customTexts[edPi]=$('#edText').value; edPi=Math.max(0,edPi-1); syncEditor(); };
 $('#edNextBtn').onclick=()=>{ customTexts[edPi]=$('#edText').value; edPi=Math.min(pagesData.length-1,edPi+1); syncEditor(); };
@@ -1343,6 +1452,7 @@ document.addEventListener('fullscreenchange',()=>{
 $('#startpill').onclick=startPlayback;
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
+    if($('#aipromptmodal').classList.contains('show')){ $('#aipromptmodal').classList.remove('show'); return; }
     if($('#helpmodal').classList.contains('show')){ $('#helpmodal').classList.remove('show'); return; }
     if($('#editor').classList.contains('show')){ closeEditor(); return; }
     if(screen==='landing') return;
