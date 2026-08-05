@@ -421,10 +421,6 @@
     <h2>使用AI生成簡報語音提示詞方法</h2>
     <div class="apbody">可將PDF資料丟進任何AI,並以下方提示詞產生各頁的逐字稿並貼入自訂欄位:
 
-原來如此！如果您已經有既定的資料或 PDF 簡報，需要 AI 幫忙「吸收內容並轉化為每一頁的演講逐字稿」，這時候提示詞的設計重點就會從「發想結構」變成「資訊萃取、口語化轉換與節奏控制」。
-
-要讓 AI 寫出像真人在演講、而不是像在「唸課文」的逐字稿，可以使用以下這種「資料轉換型」的提示詞結構：
-
 核心提示詞公式
 角色設定 + 語氣與受眾 + 處理指令（口語化與轉場）+ 輸出格式 + [貼上你的資料]
 
@@ -1281,13 +1277,13 @@ async function captureStreamAudio(out){
     return actx;
   }catch(e){ console.warn('sys audio err',e); recAudioNotes.push('音訊處理失敗'); return null; }
 }
-// 靜音看門狗：錄音前幾秒若完全沒音量，代表系統音訊沒被正確捕捉（例如選了頁籤而非整個螢幕／未勾選分享系統音訊）。
-// 僅「提示」不中止錄影，確保仍能產出完整影片（頁面＋字幕），避免中斷造成幾乎空白的片段。
+// 靜音看門狗：開錄後先聽約 4 秒，若完全沒音量，代表系統音訊沒被正確捕捉（例如分享頁籤而非整個螢幕／未勾選分享系統音訊）。
+// 僅在開頭「提示一次、然後停止檢查」，避免錄影途中反覆彈出干擾；也不會中斷錄影。
 function startSilenceWatch(rec){
   const an=recAnalyser; if(!an) return;
   const SAMPLE=an.fftSize?an.frequencyBinCount:256;
   const buf=new Uint8Array(SAMPLE);
-  let silentCount=0; let checked=0; let warned=false;
+  let heard=false; let checks=0; let warned=false;
   const timer=setInterval(()=>{
     an.getByteTimeDomainData(buf);
     let peak=0;
@@ -1295,16 +1291,13 @@ function startSilenceWatch(rec){
       const v=Math.abs(buf[i]-128);
       if(v>peak) peak=v;
     }
-    const hasAudio=peak>2; // 128 = 靜音中心，偏離 2 以上視為有聲
-    if(hasAudio) silentCount=0; else silentCount++;
-    checked++;
-    if(checked>=6){ // ~3 秒
-      if(!hasAudio&&!warned){
+    if(peak>2) heard=true; // 128 = 靜音中心，偏離 2 以上視為有聲
+    checks++;
+    if(checks>=8){ // ~4 秒：聽音視窗結束
+      clearInterval(timer);
+      if(!heard&&!warned){
         warned=true;
-        toast('⚠️ 偵測不到系統音訊：語音可能沒被錄到。請停止後重新錄製，並在分享時選「整個螢幕」且勾選「分享系統音訊」');
-      }else if(hasAudio&&warned){
-        warned=false;
-        toast('已偵測到朗讀音訊，繼續錄影');
+        toast('⚠️ 偵測不到系統音訊：語音可能沒被錄到，可停止後重新錄製並在分享時選「整個螢幕」且勾選「分享系統音訊」');
       }
     }
   },500);
