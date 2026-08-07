@@ -1193,12 +1193,19 @@ function startRecording(){
   enterFs();
   const out=new MediaStream();
   // 影片：canvas 合成（頁面＋高亮＋字幕），不依賴 tab 畫面捕捉
-  recCanvas=document.createElement('canvas');
-  recCanvas.width=canvas.width||1280; recCanvas.height=canvas.height||720;
-  const vtrack=recCanvas.captureStream(30).getVideoTracks()[0];
-  if(vtrack) out.addTrack(vtrack);
   // 音訊：僅系統音訊（不開麥克風）；speechSynthesis 需「分享整個螢幕＋分享系統音訊」才收得到
-  captureStreamAudio(out).then(actx=>{
+  captureStreamAudio(out).then(async actx=>{
+    // 等 renderPage 依全螢幕尺寸完成後，再以正確尺寸建立 recCanvas 並 captureStream。
+    // 之後 recCanvas 尺寸不可再變（canvas captureStream 在 resize 後會停止產幀），
+    // 主 canvas 任何尺寸變化一律由 drawImage 縮放處理。
+    await renderPage().catch(()=>{});
+    recCanvas=document.createElement('canvas');
+    // 依主 canvas 長寬比放大：最短邊至少 1080（1080p 等級），避免直式頁面被壓扁成 16:9
+    const _cw=canvas.width||1280, _ch=canvas.height||720;
+    const _k=Math.max(1, 1080/Math.min(_cw,_ch));
+    recCanvas.width=Math.round(_cw*_k); recCanvas.height=Math.round(_ch*_k);
+    const vtrack=recCanvas.captureStream(30).getVideoTracks()[0];
+    if(vtrack) out.addTrack(vtrack);
     const mime=pickMime();
     const mr=new MediaRecorder(out, mime?{mimeType:mime, videoBitsPerSecond:8000000}:undefined);
     const chunks=[];
@@ -1290,7 +1297,8 @@ function startRecLoop(){
   const rc=recCanvas, pc=canvas;
   const draw=()=>{
     if(!rec||!rc) return;
-    if(rc.width!==pc.width||rc.height!==pc.height){ rc.width=pc.width; rc.height=pc.height; }
+    // 重要：recCanvas 尺寸自 captureStream 後不可變更，否則 video track 停止產幀（黑畫面）。
+    // 主 canvas 縮放、翻頁、縮放倍率皆以 drawImage 縮放處理，不 resize recCanvas。
     const ctx=rc.getContext('2d');
     ctx.fillStyle='#fff'; ctx.fillRect(0,0,rc.width,rc.height);
     ctx.drawImage(pc,0,0,rc.width,rc.height);
