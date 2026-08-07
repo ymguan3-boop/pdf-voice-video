@@ -588,26 +588,8 @@ function makeSpeechPlan(text){
   let i=0;
   while(i<cps.length){
     const cp=cps[i];
-    // 表情符號組合（非 emoji）：:)、;D 等 → 標點不唸，只保留尾字（;D → D）
-    if((cp===':'||cp===';')&&i+1<cps.length){
-      let j=i+1;
-      if(cps[j]==='-') j++;
-      if(j<cps.length&&/[)DdPpOo]/.test(cps[j])){
-        const tail=cps[j];
-        const piece=/[)(]/.test(tail)?'':tail;
-        if(piece){ parts.push(piece); for(let k=0;k<piece.length;k++) toLocal.push(i); }
-        i=j+1;
-        continue;
-      }
-      i++; // 一般 : ; → 不唸
-      continue;
-    }
-    // XD / xD 表情 → 唸「叉滴」
-    if((cp==='X'||cp==='x')&&i+1<cps.length&&/^[Dd]$/.test(cps[i+1])){
-      parts.push('叉滴'); toLocal.push(i,i);
-      i+=2;
-      continue;
-    }
+    // 原則：標點符號一律依「標準標點處理」走（停頓／空白／移除），
+    // 不再把 : ; 後接字母的組合誤判成表情符號（如「;D」中 ; 是分號，非眨眼表情）。
     const rep=SPEECH_REPLACE[cp];
     let piece;
     if(rep!==undefined) piece=rep;
@@ -1369,19 +1351,18 @@ function stopRecording(){
   r.mr.onstop=()=>{
     const blob=new Blob(r.chunks,{type:r.mime||'video/webm'});
     if(blob&&blob.size){
-      // 先輸出原始錄影（不阻塞）
-      downloadBlob(blob,'pdf播放錄影.webm');
-      toast('原始錄影已下載，正在修復播放相容性…');
-      // 背景用 ffmpeg.wasm 補 Cues，完成後下載修正版
+      toast('錄影完成，正在修復播放相容性（補齊時間軸索引）…');
       remuxWebM(blob).then(fixed=>{
         if(fixed&&fixed.size){
           downloadBlob(fixed,'pdf播放錄影(可快轉).webm');
           toast('已輸出可拖動時間軸的影片（可快轉）');
         }else{
+          downloadBlob(blob,'pdf播放錄影.webm');
           toast('原始錄影已輸出（修復失敗，可直接使用）');
         }
       }).catch(err=>{
         console.warn('remux failed, raw webm kept',err);
+        downloadBlob(blob,'pdf播放錄影.webm');
         toast('原始錄影已輸出（此瀏覽器無法修復快轉，請改用 Chrome／Edge）');
       });
     }else{
@@ -1409,7 +1390,9 @@ function loadFFmpegScript(){
   });
   return _ffmpegScriptPromise;
 }
-async function remuxWebM(blob){
+async function remuxWebM(blob, attempt){
+  // attempt: 第幾次嘗試（1 起算）；失敗時重建核心重試，長影片較容易觸發記憶體錯誤
+  const _a=attempt||1;
   await loadFFmpegScript();
   const ff=FFmpeg.createFFmpeg({
     log:false,
@@ -1424,7 +1407,13 @@ async function remuxWebM(blob){
   const data=ff.FS('readFile','rec_out.webm');
   try{ ff.FS('unlink','rec_in.webm'); }catch(e){}
   try{ ff.FS('unlink','rec_out.webm'); }catch(e){}
-  return new Blob([data],{type:blob.type||'video/webm'});
+  const out=new Blob([data],{type:blob.type||'video/webm'});
+  if(out.size){
+    return out;
+  }
+  // 空輸出視為失敗，重試一次
+  if(_a<2){ toast('快轉索引重建未完成，重試中…'); return remuxWebM(blob,_a+1); }
+  throw new Error('remux empty output');
 }
 function downloadBlob(blob, name){
   const url=URL.createObjectURL(blob);
