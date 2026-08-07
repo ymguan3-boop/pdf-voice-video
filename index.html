@@ -1371,18 +1371,18 @@ function stopRecording(){
     if(blob&&blob.size){
       // 先輸出原始錄影（不阻塞）
       downloadBlob(blob,'pdf播放錄影.webm');
-      toast('原始錄影已下載，正在轉為 MP4（較相容）…');
-      // 背景用 ffmpeg.wasm 轉 MP4（H.264+AAC，Windows 播放器可直接開啟）
-      convertToMP4(blob).then(fixed=>{
+      toast('原始錄影已下載，正在修復播放相容性…');
+      // 背景用 ffmpeg.wasm 補 Cues，完成後下載修正版
+      remuxWebM(blob).then(fixed=>{
         if(fixed&&fixed.size){
-          downloadBlob(fixed,'pdf播放錄影.mp4');
-          toast('已輸出 MP4（可用 Windows 播放器開啟、可快轉）');
+          downloadBlob(fixed,'pdf播放錄影(可快轉).webm');
+          toast('已輸出可拖動時間軸的影片（可快轉）');
         }else{
-          toast('原始錄影已輸出（轉檔失敗，可直接使用）');
+          toast('原始錄影已輸出（修復失敗，可直接使用）');
         }
       }).catch(err=>{
-        console.warn('mp4 convert failed, raw webm kept',err);
-        toast('原始錄影已輸出（此瀏覽器無法轉檔，請改用 Chrome／Edge）');
+        console.warn('remux failed, raw webm kept',err);
+        toast('原始錄影已輸出（此瀏覽器無法修復快轉，請改用 Chrome／Edge）');
       });
     }else{
       toast('錄影內容為空');
@@ -1394,10 +1394,10 @@ function stopRecording(){
   exitFs();
 }
 
-/* ---------- 錄影轉檔：ffmpeg.wasm 轉 MP4（H.264+AAC） ---------- */
-// MediaRecorder 產出的 WebM（VP8/VP9+Opus）部分播放器（尤其 Windows 內建）打不開（0x80004005）。
-// 錄影結束後用 ffmpeg.wasm（single-thread，免 SharedArrayBuffer，GitHub Pages 可用）轉成 MP4。
-// 注意：single-thread core（core-st）執行完 run() 後即退出、無法重複使用，故每次轉檔都重建核心。
+/* ---------- WebM 播放相容性修復（ffmpeg.wasm 補 Cues） ---------- */
+// MediaRecorder 產出的 WebM 常缺 Cues（index），導致部分播放器無法拖動時間軸／快轉。
+// 錄影結束後用 ffmpeg.wasm（single-thread，免 SharedArrayBuffer，GitHub Pages 可用）remux 補齊。
+// 注意：single-thread core（core-st）執行完 run() 後即退出、無法重複使用，故每次 remux 都重建核心。
 let _ffmpegScriptPromise=null;
 function loadFFmpegScript(){
   if(_ffmpegScriptPromise) return _ffmpegScriptPromise;
@@ -1409,7 +1409,7 @@ function loadFFmpegScript(){
   });
   return _ffmpegScriptPromise;
 }
-async function convertToMP4(blob){
+async function remuxWebM(blob){
   await loadFFmpegScript();
   const ff=FFmpeg.createFFmpeg({
     log:false,
@@ -1419,18 +1419,12 @@ async function convertToMP4(blob){
   await ff.load();
   const buf=new Uint8Array(await blob.arrayBuffer());
   ff.FS('writeFile','rec_in.webm',buf);
-  // 轉 MP4：H.264 視訊 + AAC 音訊，faststart 讓 moov 置於檔頭（播放器可立即開啟、可快轉）。
-  // PDF 朗讀畫面多為靜態頁面＋高亮＋字幕，用 ultrafast + 15fps 大幅加快 wasm 轉檔速度
-  // （約 3.7 倍即時：5 分鐘錄影約 80 秒完成），畫面品質仍清晰。
-  await ff.run('-i','rec_in.webm',
-    '-c:v','libx264','-preset','ultrafast','-crf','26','-r','15',
-    '-c:a','aac','-b:a','96k',
-    '-movflags','+faststart',
-    'rec_out.mp4');
-  const data=ff.FS('readFile','rec_out.mp4');
+  // core-st 0.11.1 為 2020 版 FFmpeg，無 -cues_to_front；純 -c copy 重寫封包即會重新產生 Cues
+  await ff.run('-i','rec_in.webm','-c','copy','rec_out.webm');
+  const data=ff.FS('readFile','rec_out.webm');
   try{ ff.FS('unlink','rec_in.webm'); }catch(e){}
-  try{ ff.FS('unlink','rec_out.mp4'); }catch(e){}
-  return new Blob([data],{type:'video/mp4'});
+  try{ ff.FS('unlink','rec_out.webm'); }catch(e){}
+  return new Blob([data],{type:blob.type||'video/webm'});
 }
 function downloadBlob(blob, name){
   const url=URL.createObjectURL(blob);
